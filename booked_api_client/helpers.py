@@ -2,8 +2,10 @@
 
 # session = Session()
 
+from .config import Method
 
-def validate_url(url: str):
+
+def is_url_valid(url: str):
     """
     URL validator inspired by Django's URL validator.
     :param url: URL to validate
@@ -35,10 +37,11 @@ def parse_date(date: str, date_format: str = "%Y-%m-%dT%H:%M:%S%z"):
     return datetime.strptime(date, date_format)
 
 
-def make_api_call(endpoint: str, method: str, data: dict = None, post_authentication: bool = False, session_token: str = None, user_id: str = None):
+def make_api_call(route: str, method: Method.value, data: dict = None, post_authentication: bool = True,
+                  session_token: str = None, user_id: str = None):
     """
     Make an API call with retries if the calls fails.
-    :param endpoint: The endpoint we wish to connect to
+    :param route: The endpoint we wish to connect to
     :param data: The request parameters
     :param method: POST/GET
     :param post_authentication: Whether this call is made after beeing authenticated
@@ -48,11 +51,11 @@ def make_api_call(endpoint: str, method: str, data: dict = None, post_authentica
     Else, json encoded body of the response.
     """
 
-    def api_call(endpoint: str, method: str, data: dict = None, post_authentication: bool = False,
-                 session_token: str = None, user_id: str = None):
+    def _api_call(route: str, method: Method, data: dict = None, post_authentication: bool = True    ,
+                  session_token: str = None, user_id: str = None):
         """
         Make an API call
-        :param endpoint: The endpoint we wish to connect to
+        :param route: The endpoint we wish to connect to
         :param data: The request parameters
         :param method: POST/GET
         :param post_authentication: Whether this call is made after beeing authenticated
@@ -65,32 +68,35 @@ def make_api_call(endpoint: str, method: str, data: dict = None, post_authentica
 
         if post_authentication is True:
             if session_token is None or user_id is None:
-                return False
+                return None
             headers['X-Booked-SessionToken'] = session_token
             headers['X-Booked-UserId'] = user_id
 
         from requests import get, post, delete
-        from config import TIMEOUT
+        from .config import TIMEOUT
 
-        method = method.lower()
-        if method == 'get':
+        if method.value == 'GET':
+            if data is not None:
+                pass  # Log a warning about non relevant data
             # response = session.get(endpoint, headers=headers, timeout=TIMEOUT)
-            response = get(endpoint, headers=headers, timeout=TIMEOUT)
-        elif method == 'post':
+            response = get(route, headers=headers, timeout=TIMEOUT)
+        elif method.value == 'POST':
             headers['Content-Type'] = 'application/json'
             # response = session.post(endpoint, headers=headers, json=data, timeout=TIMEOUT)
-            response = post(endpoint, headers=headers, json=data, timeout=TIMEOUT)
-        elif method == 'delete':
+            response = post(route, headers=headers, json=data, timeout=TIMEOUT)
+        elif method.value == 'DELETE':
+            if data is not None:
+                pass  # Log a warning about non relevant data
             # response = session.delete(endpoint, headers=headers, timeout=TIMEOUT)
-            response = delete(endpoint, headers=headers, timeout=TIMEOUT)
+            response = delete(route, headers=headers, timeout=TIMEOUT)
         else:
-            return False
+            raise ValueError('HTTP method should be one from the following: GET, POST, DELETE.')
 
         response.raise_for_status()
 
         return response.json()
 
-    from config import TIME_BETWEEN_RETRIES, NUMBER_OF_RETRIES
+    from .config import TIME_BETWEEN_RETRIES, NUMBER_OF_RETRIES
     from requests import RequestException
     from time import sleep
 
@@ -99,8 +105,8 @@ def make_api_call(endpoint: str, method: str, data: dict = None, post_authentica
     while retries:
         try:
             retries = retries - 1
-            return api_call(endpoint=endpoint, method=method, data=data, post_authentication=post_authentication,
-                            session_token=session_token, user_id=user_id)
+            return _api_call(route=route, method=method, data=data, post_authentication=post_authentication,
+                             session_token=session_token, user_id=user_id)
         except RequestException:
             if retries == 1:  # The last call
                 raise
